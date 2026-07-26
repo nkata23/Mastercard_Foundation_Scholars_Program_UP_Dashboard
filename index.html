@@ -757,6 +757,7 @@ const SK = '#0EA5E9';  // Sky Blue
 const BAR_GOLD  = '#E8C53A';
 const BAR_WHITE = '#F5F1E8';
 const BAR_RED   = '#E8483A';
+const BAR_TEAL  = '#2DD4BF';
 const DARK_GRID = 'rgba(255,255,255,.10)';
 const DARK_TICK = 'rgba(255,255,255,.65)';
 const PK = '#EC4899';  // Pink
@@ -1125,6 +1126,24 @@ function bFunnel(){
 // Custom Chart.js plugin: spotlight a single data point with a soft radial
 // glow halo, a subtle vertical highlight band, and a bright ringed dot -
 // used to call out the peak year on the enrolment trend line.
+// Adds a soft canvas-shadow glow around a specific dataset's own line/fill
+// draw call. Wrapping Chart.js's native per-dataset draw (rather than
+// manually re-tracing the curve) means the glow follows the exact bezier
+// path Chart.js already computed - no risk of a mismatched overlay line.
+const lineGlowPlugin = {
+  id: 'lineGlow',
+  beforeDatasetDraw(chart, args, opts){
+    if(!opts || args.index !== (opts.datasetIndex ?? 0)) return;
+    chart.ctx.save();
+    chart.ctx.shadowColor = opts.color;
+    chart.ctx.shadowBlur = opts.blur ?? 10;
+  },
+  afterDatasetDraw(chart, args, opts){
+    if(!opts || args.index !== (opts.datasetIndex ?? 0)) return;
+    chart.ctx.restore();
+  }
+};
+
 const glowHighlightPlugin = {
   id: 'glowHighlight',
   beforeDatasetsDraw(chart, args, opts){
@@ -1238,20 +1257,43 @@ function bFacQual(){
 
 function bConfer(){
   const canvasEl = document.getElementById('cConfer');
+  const ctx2d = canvasEl.getContext('2d');
+  const [r,g,b] = hex2rgb(BAR_TEAL);
+  // Static gradient fill, computed once against the canvas's own fixed
+  // dimensions - the same reliable pattern used for the bar charts,
+  // just applied as an area fill under a smooth line instead.
+  const fillGrad = ctx2d.createLinearGradient(0, 0, 0, canvasEl.height);
+  fillGrad.addColorStop(0, `rgba(${r},${g},${b},.5)`);
+  fillGrad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+
   CH.confer=new Chart(canvasEl,{
-    type:'bar',
+    type:'line',
+    plugins:[lineGlowPlugin],
     data:{
       labels:D.confer.yr,
       datasets:[{
         label:'Degrees Conferred',
         data:D.confer.val,
-        backgroundColor:D.confer.yr.map((y,i)=>{const [r,g,b]=hex2rgb(BAR_GOLD);return y>=2025?`rgba(${r},${g},${b},.45)`:`rgba(${r},${g},${b},1)`;}),
-        borderRadius:6
+        borderColor:BAR_TEAL,
+        backgroundColor:fillGrad,
+        fill:true,
+        tension:.4,
+        borderWidth:2.5,
+        // 2025/2026 rendered as hollow points - conferrals for these years are still accumulating
+        pointRadius:D.confer.yr.map(y=>y>=2025?4:3.5),
+        pointBackgroundColor:D.confer.yr.map(y=>y>=2025?'transparent':BAR_TEAL),
+        pointBorderColor:BAR_TEAL,
+        pointBorderWidth:2,
+        pointHoverRadius:6,
+        pointHoverBackgroundColor:BAR_TEAL
       }]
     },
     options:{
       responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{...TTP}},
+      plugins:{
+        legend:{display:false},tooltip:{...TTP},
+        lineGlow:{datasetIndex:0,color:'rgba(45,212,191,.85)',blur:11}
+      },
       scales:{x:{grid:{display:false},ticks:{color:DARK_TICK}},y:{...DARK_SCALES_Y,beginAtZero:true}}
     }
   });
